@@ -2,7 +2,7 @@
 # ============================================================
 # Configuration — edit these variables to match your setup
 # ============================================================
-SLURM_PARTITION="gpufast" # Slurm partition to use
+SLURM_PARTITION="gpufast,amdgpufast" # Slurm partition to use
 SLURM_GPUS=1
 SLURM_MEM="25G"                                # Memory to request
 DEFAULT_WORK_DIR=$(pwd)                        # Directory to start Jupyter from
