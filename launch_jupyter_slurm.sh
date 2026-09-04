@@ -134,18 +134,37 @@ if [[ -z "${JUPYTER_TOKEN}" ]]; then
   echo "         Check the log manually: cat ${TMPLOG}"
 fi
 
-# Step 4: Open an SSH tunnel from the login node to the compute node
-#   Traffic on LOGIN_NODE:LOCAL_PORT is forwarded to COMPUTE_NODE:JUPYTER_PORT
+# Step 4: Establish a *reverse* SSH tunnel from the compute node's Jupyter
+# job back to this node, instead of SSH-ing into the compute node.
+# SSH-ing into the compute node is resolved by pam_slurm_adopt, which picks
+# (or refuses) a job to adopt the session into and gets ambiguous -- and can
+# silently break the tunnel -- whenever more than one of our jobs is running
+# on that node. This node, by contrast, only ever has the one job we're
+# running from, so a connection landing here is never ambiguous. The
+# reverse-ssh process is launched with "srun --jobid=... --overlap" so it
+# runs inside the Jupyter job's own allocation without needing SSH/PAM to
+# get there in the first place.
+LOGIN_NODE=$(hostname)
+
 echo ""
-echo "==> Opening SSH tunnel: localhost:${LOCAL_PORT} -> ${COMPUTE_NODE}:${JUPYTER_PORT}"
+echo "==> Opening reverse SSH tunnel: ${COMPUTE_NODE} -> ${LOGIN_NODE}:${LOCAL_PORT}"
 echo "==> Access Jupyter at:  http://localhost:${LOCAL_PORT}/?token=${JUPYTER_TOKEN}"
 echo "==> (Press Ctrl+C to close the tunnel and cancel the job)"
 echo ""
 
-# Trap Ctrl+C to cleanly cancel the job and remove temp files
+srun --jobid="${JOB_ID}" --overlap \
+  ssh -N \
+  -o StrictHostKeyChecking=no \
+  -o ExitOnForwardFailure=yes \
+  -R "${LOCAL_PORT}:localhost:${JUPYTER_PORT}" \
+  "${LOGIN_NODE}" &
+TUNNEL_PID=$!
+
+# Trap Ctrl+C to cleanly tear down the tunnel, cancel the job and remove temp files
 cleanup() {
   echo ""
   echo "==> Caught interrupt. Cancelling Slurm job ${JOB_ID}..."
+  kill "${TUNNEL_PID}" 2>/dev/null
   scancel "${JOB_ID}"
   rm -f "${TMPLOG}" "${TMPNODE}"
   echo "==> Cleaned up. Goodbye!"
@@ -153,13 +172,9 @@ cleanup() {
 }
 trap cleanup INT TERM
 
-ssh -N \
-  -o StrictHostKeyChecking=no \
-  -o ExitOnForwardFailure=yes \
-  -L "${LOCAL_PORT}:localhost:${JUPYTER_PORT}" \
-  "${COMPUTE_NODE}"
+wait "${TUNNEL_PID}"
 
-# If ssh exits on its own (e.g. job finished), clean up
+# If the tunnel exits on its own (e.g. job finished), clean up
 echo "==> SSH tunnel closed."
 echo "==> Cancelling Slurm job ${JOB_ID}..."
 scancel "${JOB_ID}"
