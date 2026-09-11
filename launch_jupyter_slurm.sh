@@ -144,7 +144,7 @@ fi
 # reverse-ssh process is launched with "srun --jobid=... --overlap" so it
 # runs inside the Jupyter job's own allocation without needing SSH/PAM to
 # get there in the first place.
-LOGIN_NODE=$(hostname)
+LOGIN_NODE=$(hostname -f)
 
 echo ""
 echo "==> Opening reverse SSH tunnel: ${COMPUTE_NODE} -> ${LOGIN_NODE}:${LOCAL_PORT}"
@@ -180,3 +180,4 @@ echo "==> Cancelling Slurm job ${JOB_ID}..."
 scancel "${JOB_ID}"
 rm -f "${TMPLOG}" "${TMPNODE}"
 echo "==> Done."
+
